@@ -43,10 +43,12 @@ public final class SwordsmanSkills {
     private static final int ONE_MINUTE_TICKS = 1200;
     private static final int TWO_MINUTES_TICKS = 2400;
     private static final int THREE_MINUTES_TICKS = 3600;
-    private static final int PARRY_WINDOW_TICKS = 10; // 0.5s Sekiro-style deflect window
+    private static final int PERFECT_PARRY_TICKS = 4;  // 0.20s perfect deflect window
+    private static final int PARRY_WINDOW_TICKS = 10;  // 0.50s total parry window (ticks 4..9 = 20% dmg/kb)
     private static final int SUMMON_STRIKE_INTERVAL_TICKS = 15; // 4 swords strike every 0.75s
 
     private static final Map<UUID, Long> SURGE_UNTIL_TICK = new HashMap<>();
+    private static final Map<UUID, Long> PARRY_START_TICK = new HashMap<>();
     private static final Map<UUID, Long> PARRY_UNTIL_TICK = new HashMap<>();
     private static final Map<UUID, Long> SUMMON_SWORD_UNTIL_TICK = new HashMap<>();
     private static final Map<UUID, Long> BERSERK_UNTIL_TICK = new HashMap<>();
@@ -98,7 +100,10 @@ public final class SwordsmanSkills {
     public static void tick(ServerPlayer player, PlayerRpgData data, long gameTime) {
         UUID id = player.getUUID();
         if (!hasSurge(id, gameTime)) SURGE_UNTIL_TICK.remove(id);
-        if (!isParrying(id, gameTime)) PARRY_UNTIL_TICK.remove(id);
+        if (!isParrying(id, gameTime)) {
+            PARRY_UNTIL_TICK.remove(id);
+            PARRY_START_TICK.remove(id);
+        }
         if (!hasSummonSword(id, gameTime)) {
             SUMMON_SWORD_UNTIL_TICK.remove(id);
             if (player.level() instanceof ServerLevel level) {
@@ -151,14 +156,19 @@ public final class SwordsmanSkills {
 
         // 1) Active Sekiro-style manual Parry
         if (isParrying(id, gameTime)) {
+            long startTick = PARRY_START_TICK.getOrDefault(id, gameTime);
+            long elapsed = Math.max(0L, gameTime - startTick);
             PARRY_UNTIL_TICK.remove(id);
-            performParryDeflect(defender, data, level, event, false);
+            PARRY_START_TICK.remove(id);
+
+            boolean perfect = elapsed < PERFECT_PARRY_TICKS;
+            performParryDeflect(defender, data, level, event, perfect, false);
             return;
         }
 
         // 2) Summon Sword: the 2 guardian swords have a 20% chance to parry incoming hits
         if (hasSummonSword(id, gameTime) && level.random.nextFloat() < 0.20f) {
-            performParryDeflect(defender, data, level, event, true);
+            performParryDeflect(defender, data, level, event, true, true);
         }
     }
 
@@ -173,40 +183,64 @@ public final class SwordsmanSkills {
             PlayerRpgData data,
             ServerLevel level,
             LivingIncomingDamageEvent event,
+            boolean perfect,
             boolean fromGuardianSword
     ) {
-        event.setCanceled(true);
+        if (perfect) {
+            event.setCanceled(true);
+        } else {
+            // Close parry: take 20% damage and 20% knockback
+            event.setAmount(event.getAmount() * 0.20f);
+            Vec3 vel = defender.getDeltaMovement();
+            defender.setDeltaMovement(vel.x * 0.20, vel.y, vel.z * 0.20);
+        }
 
         long gameTime = level.getGameTime();
-        level.playSound(null, defender.blockPosition(), SoundEvents.SHIELD_BLOCK, SoundSource.PLAYERS, 1.0f, 1.45f);
-        level.playSound(null, defender.blockPosition(), SoundEvents.ANVIL_PLACE, SoundSource.PLAYERS, 0.75f, 1.9f);
-        level.sendParticles(ParticleTypes.CRIT, defender.getX(), defender.getY() + 1.1, defender.getZ(),
-                18, 0.45, 0.35, 0.45, 0.2);
-        level.sendParticles(ParticleTypes.FLAME, defender.getX(), defender.getY() + 1.1, defender.getZ(),
-                10, 0.35, 0.25, 0.35, 0.08);
+        level.playSound(null, defender.blockPosition(), SoundEvents.SHIELD_BLOCK, SoundSource.PLAYERS, 1.0f, perfect ? 1.65f : 1.15f);
+        level.playSound(null, defender.blockPosition(), SoundEvents.ANVIL_PLACE, SoundSource.PLAYERS, perfect ? 0.85f : 0.45f, perfect ? 1.95f : 1.35f);
 
         if (event.getSource().getEntity() instanceof LivingEntity attacker && attacker.isAlive() && attacker != defender) {
+            spawnParryStar(level, defender, attacker);
+
             Vec3 push = attacker.position().subtract(defender.position());
             Vec3 horiz = new Vec3(push.x, 0.0, push.z);
             if (horiz.lengthSqr() > 1.0E-4) {
-                horiz = horiz.normalize().scale(0.65);
-                attacker.push(horiz.x, 0.22, horiz.z);
+                horiz = horiz.normalize().scale(perfect ? 0.65 : 0.30);
+                attacker.push(horiz.x, perfect ? 0.22 : 0.10, horiz.z);
             }
 
-            int parryLvl = Math.max(1, data.getSkillLevel(PARRY));
-            SkillTier tier = SkillTier.fromSkillLevel(parryLvl);
-            float counterDamage = (float) ((4.0 + (parryLvl - 1) * 0.6) * tier.getPowerMultiplier());
-            if (isBerserk(defender.getUUID(), gameTime)) {
-                counterDamage *= 3.0f;
+            if (perfect) {
+                int parryLvl = Math.max(1, data.getSkillLevel(PARRY));
+                SkillTier tier = SkillTier.fromSkillLevel(parryLvl);
+                float counterDamage = (float) ((4.0 + (parryLvl - 1) * 0.6) * tier.getPowerMultiplier());
+                if (isBerserk(defender.getUUID(), gameTime)) {
+                    counterDamage *= 3.0f;
+                }
+                attacker.hurt(defender.damageSources().playerAttack(defender), counterDamage);
             }
-            attacker.hurt(defender.damageSources().playerAttack(defender), counterDamage);
         }
+    }
 
-        defender.displayClientMessage(
-                Component.literal(fromGuardianSword ? "⚔ GUARDIAN SWORD PARRIED!" : "⚔ PARRIED!")
-                        .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD),
-                true
-        );
+    /** Spawns a white 4-pointed Sekiro-style star in front of the parried mob. */
+    private static void spawnParryStar(ServerLevel level, ServerPlayer defender, LivingEntity attacker) {
+        Vec3 mobPos = attacker.position().add(0.0, attacker.getBbHeight() * 0.6, 0.0);
+        Vec3 toDefender = defender.getEyePosition().subtract(mobPos);
+        Vec3 forward = toDefender.lengthSqr() > 1.0E-4 ? toDefender.normalize() : new Vec3(0, 0, 1);
+        Vec3 center = mobPos.add(forward.scale(0.65));
+
+        Vec3 right = forward.cross(new Vec3(0, 1, 0));
+        if (right.lengthSqr() < 1.0E-4) right = new Vec3(1, 0, 0);
+        right = right.normalize();
+        Vec3 up = right.cross(forward).normalize();
+
+        // 4-pointed star rays (up, down, left, right)
+        for (int step = 0; step <= 4; step++) {
+            double dist = step * 0.18;
+            level.sendParticles(ParticleTypes.END_ROD, center.x + right.x * dist, center.y + right.y * dist, center.z + right.z * dist, 1, 0, 0, 0, 0);
+            level.sendParticles(ParticleTypes.END_ROD, center.x - right.x * dist, center.y - right.y * dist, center.z - right.z * dist, 1, 0, 0, 0, 0);
+            level.sendParticles(ParticleTypes.END_ROD, center.x + up.x * dist, center.y + up.y * dist, center.z + up.z * dist, 1, 0, 0, 0, 0);
+            level.sendParticles(ParticleTypes.END_ROD, center.x - up.x * dist, center.y - up.y * dist, center.z - up.z * dist, 1, 0, 0, 0, 0);
+        }
     }
 
     private static void tickSummonedSwords(ServerPlayer player, PlayerRpgData data, ServerLevel level, long gameTime) {
@@ -392,6 +426,12 @@ public final class SwordsmanSkills {
         if (!(player.level() instanceof ServerLevel level)) return false;
         long gameTime = level.getGameTime();
 
+        // Prevent spamming from resetting an active parry window
+        if (isParrying(player.getUUID(), gameTime)) {
+            return false;
+        }
+
+        PARRY_START_TICK.put(player.getUUID(), gameTime);
         PARRY_UNTIL_TICK.put(player.getUUID(), gameTime + PARRY_WINDOW_TICKS);
         player.swing(InteractionHand.MAIN_HAND, true);
         level.playSound(null, player.blockPosition(), SoundEvents.TRIDENT_THROW.value(), SoundSource.PLAYERS, 0.6f, 1.7f);
