@@ -68,7 +68,9 @@ public record CastSkillPayload(String skillId) implements CustomPacketPayload {
                 if (!SkillRegistry.HEALER_HEAL.equals(skill.getId())
                         && !SkillRegistry.ARCHER_LEAP.equals(skill.getId())) {
                     int cdTicks = skill.getCooldownTicksForLevel(skillLevel);
-                    data.startCooldown(skill.getId(), gameTime, cdTicks);
+                    if (cdTicks > 0) {
+                        data.startCooldown(skill.getId(), gameTime, cdTicks);
+                    }
                 }
                 PacketDistributor.sendToPlayer(serverPlayer, SyncRpgDataPayload.from(data));
             }

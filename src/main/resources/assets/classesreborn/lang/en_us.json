@@ -14,7 +14,10 @@
   "class.classesreborn.healer.desc": "Support caster wielding a staff with boosted healing and buffs.",
 
   "skill.classesreborn.tank_roar": "Roar (Taunt & Defense)",
-  "skill.classesreborn.swordsman_quickslash": "Quickslash (Sword Damage Surge)",
+  "skill.classesreborn.swordsman_surge": "Surge (2m Attack Boost)",
+  "skill.classesreborn.swordsman_parry": "Parry (Deflect & Counter)",
+  "skill.classesreborn.swordsman_summon_sword": "Summon Sword (4 Spirit Swords)",
+  "skill.classesreborn.swordsman_berserk": "Berserk (+200% Dmg & Rage)",
   "skill.classesreborn.archer_dash": "Dash (WASD Burst)",
   "skill.classesreborn.assassin_invisibility": "Invisibility (Stealth & Hidden Armor)",
   "skill.classesreborn.healer_heal": "Heal Teammate (0.5s Aimed Cast)",

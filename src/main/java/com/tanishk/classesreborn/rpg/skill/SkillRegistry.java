@@ -17,7 +17,7 @@ import java.util.*;
 
 public final class SkillRegistry {
     public static final String TANK_ROAR = TankSkills.ROAR;
-    public static final String SWORDSMAN_QUICKSLASH = SwordsmanSkills.QUICKSLASH;
+    public static final String SWORDSMAN_QUICKSLASH = SwordsmanSkills.SURGE;
     public static final String ARCHER_DASH = ArcherSkills.DASH;
     public static final String ARCHER_NIGHTVISION = ArcherSkills.NIGHTVISION;
     public static final String ARCHER_LEAP = ArcherSkills.LEAP;
@@ -158,7 +158,7 @@ public final class SkillRegistry {
     }
 
     public static boolean hasQuickslashSurge(UUID playerId, long gameTime) {
-        return SwordsmanSkills.hasQuickslashSurge(playerId, gameTime);
+        return SwordsmanSkills.hasSurge(playerId, gameTime);
     }
 
     public static boolean hasArcherDashBoost(UUID playerId, long gameTime) {
@@ -169,7 +169,7 @@ public final class SkillRegistry {
         return new ActiveBuffSnapshot(
                 TankSkills.getTauntTicksLeft(playerId, gameTime),
                 AssassinSkills.getStealthTicksLeft(playerId, gameTime),
-                SwordsmanSkills.getQuickslashSurgeTicksLeft(playerId, gameTime),
+                SwordsmanSkills.getSurgeTicksLeft(playerId, gameTime),
                 ArcherSkills.getDashBoostTicksLeft(playerId, gameTime),
                 HealerSkills.getPendingHealTicksLeft(playerId, gameTime)
         );
@@ -178,7 +178,7 @@ public final class SkillRegistry {
     public static void applySyncedBuffSnapshot(UUID playerId, long gameTime, ActiveBuffSnapshot snapshot) {
         TankSkills.setTauntTicksLeft(playerId, gameTime, snapshot.tauntTicksLeft());
         AssassinSkills.setStealthTicksLeft(playerId, gameTime, snapshot.stealthTicksLeft());
-        SwordsmanSkills.setQuickslashSurgeTicksLeft(playerId, gameTime, snapshot.quickslashSurgeTicksLeft());
+        SwordsmanSkills.setSurgeTicksLeft(playerId, gameTime, snapshot.quickslashSurgeTicksLeft());
         ArcherSkills.setDashBoostTicksLeft(playerId, gameTime, snapshot.archerBoostTicksLeft());
         HealerSkills.setPendingHealTicksLeft(playerId, gameTime, snapshot.pendingHealTicksLeft());
     }

@@ -27,7 +27,7 @@ public class Skill {
         this.displayName = displayName;
         this.ownerClass = ownerClass;
         this.requiredPlayerLevel = Math.max(1, requiredPlayerLevel);
-        this.baseCooldownTicks = Math.max(1, baseCooldownTicks);
+        this.baseCooldownTicks = Math.max(0, baseCooldownTicks);
         this.action = action;
     }
 
@@ -67,6 +67,9 @@ public class Skill {
     }
 
     public int getCooldownTicksForLevel(int skillLevel) {
+        if (baseCooldownTicks <= 0) {
+            return 0;
+        }
         SkillTier tier = SkillTier.fromSkillLevel(skillLevel);
         if (SkillRegistry.ARCHER_DASH.equals(id)) {
             if (tier.ordinal() < SkillTier.LEGENDARY.ordinal()) {
