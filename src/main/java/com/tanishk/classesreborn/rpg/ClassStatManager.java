@@ -39,11 +39,19 @@ public final class ClassStatManager {
         int mightPts = data.getStatPointsAllocated(PlayerRpgData.StatType.MIGHT);
         int agilityPts = data.getStatPointsAllocated(PlayerRpgData.StatType.AGILITY);
 
-        double maxHealthValue = rpgClass.getMaxHealthBonus() + (vitPts * 1.0);
-        double armorValue = rpgClass.getArmorBonus() + (guardPts * 0.75);
-        double toughnessValue = rpgClass.getArmorToughnessBonus() + (guardPts * 0.25);
-        double speedValue = rpgClass.getMovementSpeedBonus() + (agilityPts * 0.004);
-        double attackValue = rpgClass.getAttackDamageBonus() + (mightPts * 0.5);
+        boolean isArcher = rpgClass == RpgClass.ARCHER;
+        double vitPerPt = isArcher ? 0.5 : 1.0;
+        double armorPerPt = isArcher ? 0.35 : 0.75;
+        double toughnessPerPt = isArcher ? 0.10 : 0.25;
+        double mightPerPt = isArcher ? 0.20 : 0.50;
+        double agilityPerPt = isArcher ? 0.006 : 0.004;
+
+        double maxHealthValue = rpgClass.getMaxHealthBonus() + (vitPts * vitPerPt);
+        double armorValue = rpgClass.getArmorBonus() + (guardPts * armorPerPt);
+        double toughnessValue = rpgClass.getArmorToughnessBonus() + (guardPts * toughnessPerPt);
+        double speedBonus = Math.min(0.08, agilityPts * agilityPerPt);
+        double speedValue = rpgClass.getMovementSpeedBonus() + speedBonus;
+        double attackValue = rpgClass.getAttackDamageBonus() + (mightPts * mightPerPt);
 
         setModifier(player, Attributes.MAX_HEALTH, MAX_HEALTH_ID, maxHealthValue, AttributeModifier.Operation.ADD_VALUE);
         setModifier(player, Attributes.ARMOR, ARMOR_ID, armorValue, AttributeModifier.Operation.ADD_VALUE);
@@ -60,20 +68,32 @@ public final class ClassStatManager {
         RpgClass rpgClass = data.getSelectedClass();
         double base = rpgClass == null ? 1.0 : rpgClass.getRangedDamageMultiplier();
         int precisionPts = data.getStatPointsAllocated(PlayerRpgData.StatType.PRECISION);
-        return Math.max(0.1, base + precisionPts * 0.03);
+        double perPt = rpgClass == RpgClass.ARCHER ? 0.05 : 0.03;
+        return Math.max(0.1, base + precisionPts * perPt);
     }
 
     public static double getEffectiveHealingMultiplier(PlayerRpgData data) {
         RpgClass rpgClass = data.getSelectedClass();
         double base = rpgClass == null ? 1.0 : rpgClass.getHealingMultiplier();
         int mendPts = data.getStatPointsAllocated(PlayerRpgData.StatType.MEND);
-        return Math.max(0.1, base + mendPts * 0.03);
+        if (rpgClass == RpgClass.HEALER) {
+            return Math.max(0.1, base + mendPts * 0.04);
+        }
+        return Math.max(0.1, base + Math.min(0.25, mendPts * 0.015));
+    }
+
+    public static double getEffectiveSaturationMultiplier(PlayerRpgData data) {
+        int mendPts = data.getStatPointsAllocated(PlayerRpgData.StatType.MEND);
+        return 1.0 + Math.min(0.35, mendPts * 0.02);
     }
 
     public static double getEffectiveAggroMultiplier(PlayerRpgData data) {
         RpgClass rpgClass = data.getSelectedClass();
         double base = rpgClass == null ? 1.0 : rpgClass.getAggroMultiplier();
         int presencePts = data.getStatPointsAllocated(PlayerRpgData.StatType.PRESENCE);
+        if (rpgClass == RpgClass.ARCHER) {
+            return Math.max(0.25, base - Math.min(0.45, presencePts * 0.03));
+        }
         return Math.max(0.1, base + presencePts * 0.04);
     }
 

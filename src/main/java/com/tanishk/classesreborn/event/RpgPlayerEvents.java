@@ -4,14 +4,21 @@ import com.tanishk.classesreborn.item.ModItems;
 import com.tanishk.classesreborn.network.SyncRpgDataPayload;
 import com.tanishk.classesreborn.rpg.ClassStatManager;
 import com.tanishk.classesreborn.rpg.PlayerRpgData;
+import com.tanishk.classesreborn.rpg.RpgClass;
 import com.tanishk.classesreborn.rpg.skill.SkillRegistry;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ShieldItem;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
+import net.neoforged.neoforge.event.entity.living.LivingEquipmentChangeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -96,5 +103,53 @@ public class RpgPlayerEvents {
         }
 
         PacketDistributor.sendToPlayer(killer, SyncRpgDataPayload.from(data));
+    }
+
+    @SubscribeEvent
+    public void onEquipmentChange(LivingEquipmentChangeEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (event.getSlot() != EquipmentSlot.OFFHAND) return;
+
+        ItemStack newStack = event.getTo();
+        if (!(newStack.getItem() instanceof ShieldItem)) return;
+
+        PlayerRpgData data = PlayerRpgData.get(player);
+        if (data.getSelectedClass() != RpgClass.ARCHER) return;
+
+        ItemStack copy = newStack.copy();
+        player.setItemInHand(InteractionHand.OFF_HAND, ItemStack.EMPTY);
+        if (!player.getInventory().add(copy)) {
+            player.drop(copy, false);
+        }
+        player.displayClientMessage(Component.literal("Archers cannot equip shields!"), true);
+    }
+
+    @SubscribeEvent
+    public void onUseItemStart(LivingEntityUseItemEvent.Start event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (!(event.getItem().getItem() instanceof ShieldItem)) return;
+
+        PlayerRpgData data = PlayerRpgData.get(player);
+        if (data.getSelectedClass() == RpgClass.ARCHER) {
+            event.setCanceled(true);
+            player.displayClientMessage(Component.literal("Archers cannot use shields!"), true);
+        }
+    }
+
+    @SubscribeEvent
+    public void onUseItemFinish(LivingEntityUseItemEvent.Finish event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        FoodProperties food = event.getItem().getFoodProperties(player);
+        if (food == null) return;
+
+        PlayerRpgData data = PlayerRpgData.get(player);
+        if (!data.hasSelectedClass()) return;
+
+        double satMult = ClassStatManager.getEffectiveSaturationMultiplier(data);
+        if (satMult > 1.0) {
+            float bonusSat = (float) (food.saturation() * (satMult - 1.0));
+            float newSat = Math.min(player.getFoodData().getFoodLevel(), player.getFoodData().getSaturationLevel() + bonusSat);
+            player.getFoodData().setSaturation(newSat);
+        }
     }
 }

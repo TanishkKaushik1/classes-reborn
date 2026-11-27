@@ -532,14 +532,12 @@ public class SkillTreeScreen extends Screen {
             if (unlocked) {
                 Minecraft mc = Minecraft.getInstance();
                 PlayerRpgData data = mc.player != null ? PlayerRpgData.get(mc.player) : null;
-                String[] slotLabels = { "G", "R", "C" };
+                String[] slotLabels = {"G", "R", "C"};
                 int sy = slotBtnY();
                 for (int slot = 0; slot < 3; slot++) {
                     int sx = slotBtnX(slot);
-                    boolean equipped = data != null
-                            && skill.getId().equals(SkillRegistry.getActiveSlotSkillId(data, slot));
-                    boolean slotHover = inViewport(mouseY) && mouseX >= sx && mouseX < sx + 14 && mouseY >= sy
-                            && mouseY < sy + 14;
+                    boolean equipped = data != null && skill.getId().equals(SkillRegistry.getActiveSlotSkillId(data, slot));
+                    boolean slotHover = inViewport(mouseY) && mouseX >= sx && mouseX < sx + 14 && mouseY >= sy && mouseY < sy + 14;
                     int sbg = equipped ? 0xFF2E6B2E : (slotHover ? 0xFF444455 : 0xFF252530);
                     int sOutline = equipped ? COL_ACCENT : (slotHover ? 0xAAFFFFFF : 0x55FFFFFF);
                     gg.fill(sx, sy, sx + 14, sy + 14, sbg);
