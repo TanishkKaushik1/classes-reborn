@@ -1,0 +1,29 @@
+{
+  "item.classesreborn.class_book": "Class Tome",
+  "item.classesreborn.healer_staff": "Healer's Staff",
+
+  "class.classesreborn.tank": "Tank",
+  "class.classesreborn.tank.desc": "Heavy frontline guardian with high health, armor, and mob aggro.",
+  "class.classesreborn.swordsman": "Swordsman",
+  "class.classesreborn.swordsman.desc": "Balanced melee duelist with strong blade damage and mobility.",
+  "class.classesreborn.assassin": "Assassin",
+  "class.classesreborn.assassin.desc": "Fast, fragile striker with low mob aggro and burst melee damage.",
+  "class.classesreborn.archer": "Archer",
+  "class.classesreborn.archer.desc": "Agile ranged specialist with boosted projectile damage and dash.",
+  "class.classesreborn.healer": "Healer",
+  "class.classesreborn.healer.desc": "Support caster wielding a staff with boosted healing and buffs.",
+
+  "skill.classesreborn.tank_roar": "Roar (Taunt & Defense)",
+  "skill.classesreborn.swordsman_quickslash": "Quickslash (Sword Damage Surge)",
+  "skill.classesreborn.archer_dash": "Dash (WASD Burst)",
+  "skill.classesreborn.assassin_invisibility": "Invisibility (Stealth & Hidden Armor)",
+  "skill.classesreborn.healer_heal": "Heal Teammate (0.5s Aimed Cast)",
+
+  "gui.classesreborn.select_class.title": "Choose Your Class",
+  "gui.classesreborn.select_class.confirm": "Confirm Class",
+  "gui.classesreborn.skills.title": "Class Skills",
+
+  "key.categories.classesreborn": "Classes Reborn",
+  "key.classesreborn.cast_skill": "Cast Class Skill",
+  "key.classesreborn.open_skills": "Open Skill Menu"
+}
