@@ -46,7 +46,27 @@ public class RpgPlayerEvents {
         newData.copyFrom(oldData);
 
         ClassStatManager.applyStats(newPlayer, newData);
-        PacketDistributor.sendToPlayer(newPlayer, SyncRpgDataPayload.from(newData));
+    }
+
+    @SubscribeEvent
+    public void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+
+        PlayerRpgData data = PlayerRpgData.get(player);
+        ClassStatManager.applyStats(player, data);
+        if (!event.isEndConquered()) {
+            player.setHealth(player.getMaxHealth());
+        }
+        PacketDistributor.sendToPlayer(player, SyncRpgDataPayload.from(data));
+    }
+
+    @SubscribeEvent
+    public void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+
+        PlayerRpgData data = PlayerRpgData.get(player);
+        ClassStatManager.applyStats(player, data);
+        PacketDistributor.sendToPlayer(player, SyncRpgDataPayload.from(data));
     }
 
     @SubscribeEvent

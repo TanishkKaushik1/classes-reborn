@@ -11,11 +11,9 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public record SelectClassPayload(String classId) implements CustomPacketPayload {
@@ -81,38 +79,7 @@ public record SelectClassPayload(String classId) implements CustomPacketPayload 
     }
 
     private static void giveStarterKit(ServerPlayer player, RpgClass rpgClass) {
-        List<ItemStack> items = new ArrayList<>();
-        switch (rpgClass) {
-            case TANK -> {
-                items.add(new ItemStack(Items.IRON_SWORD));
-                items.add(new ItemStack(Items.SHIELD));
-                items.add(new ItemStack(Items.IRON_CHESTPLATE));
-                items.add(new ItemStack(Items.COOKED_BEEF, 4));
-            }
-            case SWORDSMAN -> {
-                items.add(new ItemStack(Items.IRON_SWORD));
-                items.add(new ItemStack(Items.CHAINMAIL_CHESTPLATE));
-                items.add(new ItemStack(Items.IRON_BOOTS));
-                items.add(new ItemStack(Items.COOKED_BEEF, 4));
-            }
-            case ASSASSIN -> {
-                items.add(new ItemStack(Items.STONE_SWORD));
-                items.add(new ItemStack(Items.LEATHER_CHESTPLATE));
-                items.add(new ItemStack(Items.LEATHER_BOOTS));
-                items.add(new ItemStack(Items.ENDER_PEARL, 2));
-            }
-            case ARCHER -> {
-                items.add(new ItemStack(Items.BOW));
-                items.add(new ItemStack(Items.ARROW, 32));
-                items.add(new ItemStack(Items.LEATHER_CHESTPLATE));
-                items.add(new ItemStack(Items.LEATHER_HELMET));
-            }
-            case HEALER -> {
-                items.add(new ItemStack(ModItems.HEALER_STAFF.get()));
-                items.add(new ItemStack(Items.LEATHER_CHESTPLATE));
-                items.add(new ItemStack(Items.COOKED_BEEF, 4));
-            }
-        }
+        List<ItemStack> items = rpgClass.createStarterKit();
 
         for (ItemStack stack : items) {
             if (!player.getInventory().add(stack)) {

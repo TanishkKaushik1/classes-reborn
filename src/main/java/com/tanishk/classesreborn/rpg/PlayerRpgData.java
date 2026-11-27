@@ -37,6 +37,8 @@ public class PlayerRpgData {
         }
     }
 
+    public static final int MAX_ACTIVE_SLOTS = 3;
+
     public static final Codec<PlayerRpgData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.STRING.optionalFieldOf("class_id", "").forGetter(d -> d.selectedClass == null ? "" : d.selectedClass.getId()),
             Codec.INT.optionalFieldOf("level", 1).forGetter(d -> d.level),
@@ -47,6 +49,7 @@ public class PlayerRpgData {
             Codec.BOOL.optionalFieldOf("received_starter_kit", false).forGetter(d -> d.receivedStarterKit),
             Codec.STRING.listOf().optionalFieldOf("unlocked_skills", List.of()).forGetter(d -> new ArrayList<>(d.getUnlockedSkills())),
             Codec.unboundedMap(Codec.STRING, Codec.INT).optionalFieldOf("skill_levels", Map.of()).forGetter(d -> new LinkedHashMap<>(d.skillLevels)),
+            Codec.STRING.listOf().optionalFieldOf("active_skill_slots", List.of()).forGetter(d -> new ArrayList<>(d.getActiveSkillSlots())),
             Codec.unboundedMap(Codec.STRING, Codec.INT).optionalFieldOf("allocated_stats", Map.of()).forGetter(d -> {
                 Map<String, Integer> map = new LinkedHashMap<>();
                 for (StatType type : StatType.values()) {
@@ -54,7 +57,7 @@ public class PlayerRpgData {
                 }
                 return map;
             })
-    ).apply(instance, (classId, level, xp, skillPoints, statPoints, receivedBook, receivedKit, unlocked, levelsMap, statsMap) -> {
+    ).apply(instance, (classId, level, xp, skillPoints, statPoints, receivedBook, receivedKit, unlocked, levelsMap, activeSlots, statsMap) -> {
         PlayerRpgData data = new PlayerRpgData();
         data.selectedClass = RpgClass.byId(classId);
         data.level = Math.max(1, level);
@@ -74,6 +77,13 @@ public class PlayerRpgData {
                 data.skillLevels.put(k, v);
             }
         });
+
+        for (int i = 0; i < MAX_ACTIVE_SLOTS && i < activeSlots.size(); i++) {
+            String slotSkill = activeSlots.get(i);
+            if (slotSkill != null && !slotSkill.isBlank() && data.isSkillUnlocked(slotSkill)) {
+                data.setSkillInSlot(i, slotSkill);
+            }
+        }
 
         statsMap.forEach((k, v) -> {
             StatType type = StatType.byId(k);
@@ -261,7 +271,6 @@ public class PlayerRpgData {
         return this.skillPoints >= 1 && this.level >= neededPlayerLevel;
     }
     // Inside PlayerRpgData:
-    public static final int MAX_ACTIVE_SLOTS = 3;
     private final List<String> activeSkillSlots = new ArrayList<>(Collections.nCopies(MAX_ACTIVE_SLOTS, ""));
 
     public List<String> getActiveSkillSlots() {
@@ -388,12 +397,18 @@ public class PlayerRpgData {
         this.receivedStarterKit = other.receivedStarterKit;
         this.skillLevels.clear();
         this.skillLevels.putAll(other.skillLevels);
+        this.activeSkillSlots.clear();
+        this.activeSkillSlots.addAll(other.getActiveSkillSlots());
         this.allocatedStats.clear();
         this.allocatedStats.putAll(other.allocatedStats);
         this.skillCooldownEndTick.clear();
         this.skillCooldownEndTick.putAll(other.skillCooldownEndTick);
+        this.activeSkillUntilTick.clear();
+        this.activeSkillUntilTick.putAll(other.activeSkillUntilTick);
         this.bonusPrecisionPoints = other.bonusPrecisionPoints;
         this.bonusPrecisionUntilGameTime = other.bonusPrecisionUntilGameTime;
+        this.bonusRangedDamageBonus = other.bonusRangedDamageBonus;
+        this.bonusRangedDamageUntilGameTime = other.bonusRangedDamageUntilGameTime;
     }
 
     public static PlayerRpgData get(Player player) {

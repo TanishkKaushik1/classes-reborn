@@ -163,6 +163,37 @@ sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
 neoForge.ideSyncTask generateModMetadata
 
+def rustDir = layout.projectDirectory.dir('rust')
+def rustNativesDir = layout.buildDirectory.dir('rust-natives')
+def currentOs = System.getProperty('os.name', '').toLowerCase(Locale.ROOT)
+def currentArch = System.getProperty('os.arch', '').toLowerCase(Locale.ROOT)
+def isArm64 = currentArch.contains('aarch64') || currentArch.contains('arm64')
+def rustPlatform = currentOs.contains('win')
+        ? ('windows-' + (currentArch.contains('64') ? 'x86_64' : 'x86'))
+        : (currentOs.contains('mac')
+                ? (isArm64 ? 'macos-aarch64' : 'macos-x86_64')
+                : (isArm64 ? 'linux-aarch64' : 'linux-x86_64'))
+
+def buildRust = tasks.register('buildRust', Exec) {
+    workingDir rustDir
+    commandLine 'cargo', 'build', '--release'
+    inputs.dir(rustDir.dir('src'))
+    inputs.file(rustDir.file('Cargo.toml'))
+    outputs.dir(rustDir.dir('target/release'))
+}
+
+def copyRustNatives = tasks.register('copyRustNatives', Sync) {
+    dependsOn buildRust
+    from(rustDir.dir('target/release')) {
+        include '*.dll', '*.so', '*.dylib'
+        into "natives/${rustPlatform}"
+    }
+    into rustNativesDir
+}
+
+sourceSets.main.resources.srcDir copyRustNatives
+neoForge.ideSyncTask copyRustNatives
+
 // Example configuration to allow publishing using the maven-publish plugin
 publishing {
     publications {

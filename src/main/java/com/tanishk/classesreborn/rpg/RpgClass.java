@@ -1,62 +1,76 @@
 package com.tanishk.classesreborn.rpg;
 
+import com.tanishk.classesreborn.rpg.classes.archer.ArcherClass;
+import com.tanishk.classesreborn.rpg.classes.assassin.AssassinClass;
+import com.tanishk.classesreborn.rpg.classes.healer.HealerClass;
+import com.tanishk.classesreborn.rpg.classes.swordsman.SwordsmanClass;
+import com.tanishk.classesreborn.rpg.classes.tank.TankClass;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.List;
+import java.util.function.Supplier;
 
 public enum RpgClass {
     TANK(
-            "tank",
-            6.0,    // +3 hearts max health
-            6.0,    // +6 armor
-            2.0,    // +2 armor toughness
-            -0.015, // slightly slower movement
-            0.0,    // melee damage bonus
-            0.75,   // ranged damage multiplier
-            1.0,    // healing multiplier
-            1.65    // high hostile mob aggro
+            TankClass.ID,
+            TankClass.MAX_HEALTH_BONUS,
+            TankClass.ARMOR_BONUS,
+            TankClass.ARMOR_TOUGHNESS_BONUS,
+            TankClass.MOVEMENT_SPEED_BONUS,
+            TankClass.ATTACK_DAMAGE_BONUS,
+            TankClass.RANGED_DAMAGE_MULTIPLIER,
+            TankClass.HEALING_MULTIPLIER,
+            TankClass.AGGRO_MULTIPLIER,
+            TankClass::createStarterKit
     ),
     SWORDSMAN(
-            "swordsman",
-            2.0,
-            2.0,
-            0.0,
-            0.01,
-            2.5,
-            0.90,
-            1.0,
-            1.0
+            SwordsmanClass.ID,
+            SwordsmanClass.MAX_HEALTH_BONUS,
+            SwordsmanClass.ARMOR_BONUS,
+            SwordsmanClass.ARMOR_TOUGHNESS_BONUS,
+            SwordsmanClass.MOVEMENT_SPEED_BONUS,
+            SwordsmanClass.ATTACK_DAMAGE_BONUS,
+            SwordsmanClass.RANGED_DAMAGE_MULTIPLIER,
+            SwordsmanClass.HEALING_MULTIPLIER,
+            SwordsmanClass.AGGRO_MULTIPLIER,
+            SwordsmanClass::createStarterKit
     ),
     ASSASSIN(
-            "assassin",
-            -2.0,
-            -2.0,
-            0.0,
-            0.035,
-            3.0,
-            0.70,
-            1.0,
-            0.55    // lower passive hostile mob aggro
+            AssassinClass.ID,
+            AssassinClass.MAX_HEALTH_BONUS,
+            AssassinClass.ARMOR_BONUS,
+            AssassinClass.ARMOR_TOUGHNESS_BONUS,
+            AssassinClass.MOVEMENT_SPEED_BONUS,
+            AssassinClass.ATTACK_DAMAGE_BONUS,
+            AssassinClass.RANGED_DAMAGE_MULTIPLIER,
+            AssassinClass.HEALING_MULTIPLIER,
+            AssassinClass.AGGRO_MULTIPLIER,
+            AssassinClass::createStarterKit
     ),
     ARCHER(
-            "archer",
-            0.0,
-            0.0,
-            0.0,
-            0.02,
-            -1.0,
-            1.45,   // high ranged projectile multiplier
-            1.0,
-            0.80
+            ArcherClass.ID,
+            ArcherClass.MAX_HEALTH_BONUS,
+            ArcherClass.ARMOR_BONUS,
+            ArcherClass.ARMOR_TOUGHNESS_BONUS,
+            ArcherClass.MOVEMENT_SPEED_BONUS,
+            ArcherClass.ATTACK_DAMAGE_BONUS,
+            ArcherClass.RANGED_DAMAGE_MULTIPLIER,
+            ArcherClass.HEALING_MULTIPLIER,
+            ArcherClass.AGGRO_MULTIPLIER,
+            ArcherClass::createStarterKit
     ),
     HEALER(
-            "healer",
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            -1.5,
-            0.75,
-            1.50,   // boosted outgoing healing
-            0.90
+            HealerClass.ID,
+            HealerClass.MAX_HEALTH_BONUS,
+            HealerClass.ARMOR_BONUS,
+            HealerClass.ARMOR_TOUGHNESS_BONUS,
+            HealerClass.MOVEMENT_SPEED_BONUS,
+            HealerClass.ATTACK_DAMAGE_BONUS,
+            HealerClass.RANGED_DAMAGE_MULTIPLIER,
+            HealerClass.HEALING_MULTIPLIER,
+            HealerClass.AGGRO_MULTIPLIER,
+            HealerClass::createStarterKit
     );
 
     private final String id;
@@ -68,6 +82,7 @@ public enum RpgClass {
     private final double rangedDamageMultiplier;
     private final double healingMultiplier;
     private final double aggroMultiplier;
+    private final Supplier<List<ItemStack>> starterKitFactory;
 
     RpgClass(
             String id,
@@ -78,7 +93,8 @@ public enum RpgClass {
             double attackDamageBonus,
             double rangedDamageMultiplier,
             double healingMultiplier,
-            double aggroMultiplier
+            double aggroMultiplier,
+            Supplier<List<ItemStack>> starterKitFactory
     ) {
         this.id = id;
         this.maxHealthBonus = maxHealthBonus;
@@ -89,6 +105,7 @@ public enum RpgClass {
         this.rangedDamageMultiplier = rangedDamageMultiplier;
         this.healingMultiplier = healingMultiplier;
         this.aggroMultiplier = aggroMultiplier;
+        this.starterKitFactory = starterKitFactory;
     }
 
     public String getId() {
@@ -129,6 +146,10 @@ public enum RpgClass {
 
     public double getAggroMultiplier() {
         return aggroMultiplier;
+    }
+
+    public List<ItemStack> createStarterKit() {
+        return starterKitFactory.get();
     }
 
     public static RpgClass byId(String id) {

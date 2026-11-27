@@ -44,3 +44,6 @@ crash-reports/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
+
+### Rust ###
+rust/target/
