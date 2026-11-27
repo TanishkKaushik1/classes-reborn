@@ -5,6 +5,7 @@ import com.tanishk.classesreborn.rpg.RpgClass;
 import com.tanishk.classesreborn.rpg.skill.Skill;
 import com.tanishk.classesreborn.rpg.skill.SkillRegistry;
 import com.tanishk.classesreborn.rpg.skill.SkillTier;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -15,12 +16,16 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Display;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlotGroup;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
@@ -46,6 +51,7 @@ public final class SwordsmanSkills {
     private static final Map<UUID, Long> SUMMON_SWORD_UNTIL_TICK = new HashMap<>();
     private static final Map<UUID, Long> BERSERK_UNTIL_TICK = new HashMap<>();
     private static final Map<UUID, Integer> LAST_TARGET_ENTITY_ID = new HashMap<>();
+    private static final Map<UUID, List<UUID>> SUMMONED_SWORD_ENTITIES = new HashMap<>();
 
     private SwordsmanSkills() {
     }
@@ -93,7 +99,12 @@ public final class SwordsmanSkills {
         UUID id = player.getUUID();
         if (!hasSurge(id, gameTime)) SURGE_UNTIL_TICK.remove(id);
         if (!isParrying(id, gameTime)) PARRY_UNTIL_TICK.remove(id);
-        if (!hasSummonSword(id, gameTime)) SUMMON_SWORD_UNTIL_TICK.remove(id);
+        if (!hasSummonSword(id, gameTime)) {
+            SUMMON_SWORD_UNTIL_TICK.remove(id);
+            if (player.level() instanceof ServerLevel level) {
+                despawnSummonedSwords(id, level);
+            }
+        }
         if (!isBerserk(id, gameTime)) BERSERK_UNTIL_TICK.remove(id);
 
         if (isBerserk(id, gameTime) && gameTime % 10 == 0 && player.level() instanceof ServerLevel level) {
@@ -167,9 +178,12 @@ public final class SwordsmanSkills {
         event.setCanceled(true);
 
         long gameTime = level.getGameTime();
-        level.playSound(null, defender.blockPosition(), SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.7f, 1.85f);
+        level.playSound(null, defender.blockPosition(), SoundEvents.SHIELD_BLOCK, SoundSource.PLAYERS, 1.0f, 1.45f);
+        level.playSound(null, defender.blockPosition(), SoundEvents.ANVIL_PLACE, SoundSource.PLAYERS, 0.75f, 1.9f);
         level.sendParticles(ParticleTypes.CRIT, defender.getX(), defender.getY() + 1.1, defender.getZ(),
-                12, 0.45, 0.35, 0.45, 0.15);
+                18, 0.45, 0.35, 0.45, 0.2);
+        level.sendParticles(ParticleTypes.FLAME, defender.getX(), defender.getY() + 1.1, defender.getZ(),
+                10, 0.35, 0.25, 0.35, 0.08);
 
         if (event.getSource().getEntity() instanceof LivingEntity attacker && attacker.isAlive() && attacker != defender) {
             Vec3 push = attacker.position().subtract(defender.position());
@@ -189,21 +203,30 @@ public final class SwordsmanSkills {
         }
 
         defender.displayClientMessage(
-                Component.literal(fromGuardianSword ? "Guardian Sword Parried!" : "PARRY!"),
+                Component.literal(fromGuardianSword ? "⚔ GUARDIAN SWORD PARRIED!" : "⚔ PARRIED!")
+                        .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD),
                 true
         );
     }
 
     private static void tickSummonedSwords(ServerPlayer player, PlayerRpgData data, ServerLevel level, long gameTime) {
-        // Orbit particles every 4 ticks so the 4 floating swords are visible around the player
-        if (gameTime % 4 == 0) {
-            double baseAngle = (gameTime * 0.25) % (Math.PI * 2.0);
-            for (int i = 0; i < 4; i++) {
-                double angle = baseAngle + i * (Math.PI / 2.0);
-                double px = player.getX() + Math.cos(angle) * 1.4;
-                double py = player.getY() + 1.15 + Math.sin(baseAngle * 2.0 + i) * 0.15;
-                double pz = player.getZ() + Math.sin(angle) * 1.4;
-                level.sendParticles(ParticleTypes.ENCHANTED_HIT, px, py, pz, 1, 0, 0, 0, 0);
+        ensureSummonedSwordsSpawned(player, level);
+
+        // Smoothly orbit the 4 visible ItemDisplay swords around the player every tick
+        List<UUID> swordIds = SUMMONED_SWORD_ENTITIES.get(player.getUUID());
+        if (swordIds != null) {
+            double baseAngle = (gameTime * 0.18) % (Math.PI * 2.0);
+            for (int i = 0; i < swordIds.size(); i++) {
+                Entity e = level.getEntity(swordIds.get(i));
+                if (e instanceof Display.ItemDisplay display && display.isAlive()) {
+                    double angle = baseAngle + i * (Math.PI / 2.0);
+                    double px = player.getX() + Math.cos(angle) * 1.45;
+                    double py = player.getY() + 1.15 + Math.sin(baseAngle * 2.0 + i) * 0.18;
+                    double pz = player.getZ() + Math.sin(angle) * 1.45;
+                    display.setPos(px, py, pz);
+                    display.setYRot((float) Math.toDegrees(angle) + 90.0f);
+                    display.setXRot(-35.0f);
+                }
             }
         }
 
@@ -271,6 +294,63 @@ public final class SwordsmanSkills {
             }
         }
         return best;
+    }
+
+    private static void ensureSummonedSwordsSpawned(ServerPlayer player, ServerLevel level) {
+        List<UUID> existing = SUMMONED_SWORD_ENTITIES.get(player.getUUID());
+        if (existing != null && existing.size() == 4) {
+            boolean allAlive = true;
+            for (UUID uuid : existing) {
+                Entity e = level.getEntity(uuid);
+                if (e == null || !e.isAlive()) {
+                    allAlive = false;
+                    break;
+                }
+            }
+            if (allAlive) return;
+        }
+
+        despawnSummonedSwords(player.getUUID(), level);
+        ItemStack swordVisual = getBestSwordStack(player);
+        List<UUID> spawned = new ArrayList<>(4);
+        for (int i = 0; i < 4; i++) {
+            Display.ItemDisplay display = EntityType.ITEM_DISPLAY.create(level);
+            if (display != null) {
+                display.getSlot(0).set(swordVisual.copy());
+                display.setPos(player.getX(), player.getY() + 1.2, player.getZ());
+                level.addFreshEntity(display);
+                spawned.add(display.getUUID());
+            }
+        }
+        SUMMONED_SWORD_ENTITIES.put(player.getUUID(), spawned);
+    }
+
+    private static void despawnSummonedSwords(UUID playerId, ServerLevel level) {
+        List<UUID> ids = SUMMONED_SWORD_ENTITIES.remove(playerId);
+        if (ids == null) return;
+        for (UUID uuid : ids) {
+            Entity e = level.getEntity(uuid);
+            if (e != null) {
+                e.discard();
+            }
+        }
+    }
+
+    private static ItemStack getBestSwordStack(ServerPlayer player) {
+        ItemStack bestStack = new ItemStack(Items.IRON_SWORD);
+        double bestDmg = -1.0;
+        for (ItemStack stack : player.getInventory().items) {
+            double dmg = getSwordAttackDamage(stack);
+            if (dmg > bestDmg) {
+                bestDmg = dmg;
+                bestStack = stack;
+            }
+        }
+        double offDmg = getSwordAttackDamage(player.getOffhandItem());
+        if (offDmg > bestDmg) {
+            bestStack = player.getOffhandItem();
+        }
+        return bestStack.isEmpty() ? new ItemStack(Items.IRON_SWORD) : bestStack;
     }
 
     private static double getBestSwordAttackDamage(ServerPlayer player) {
