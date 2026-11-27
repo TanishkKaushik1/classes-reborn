@@ -14,6 +14,13 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -24,24 +31,35 @@ import java.util.function.Consumer;
 
 public final class ArcherSkills {
     public static final String DASH = "archer_dash";
-    public static final String NIGHTVISION = "archer_nightvision";
+    public static final String MARK = "archer_mark";
     public static final String LEAP = "archer_leap";
+    public static final String ARROW_BARRAGE = "archer_arrow_barrage";
 
     private static final int TWO_MINUTES_TICKS = 2400; // 120s * 20 ticks
     private static final int ONE_MINUTE_TICKS = 1200;  // 60s * 20 ticks
     private static final int LEAP_RECAST_DELAY_TICKS = 75;
+    private static final int MARK_DURATION_TICKS = 600; // 30s * 20 ticks
+    private static final int MARK_IFRAME_TICKS = 18;    // 0.9s i-frames while sliding
+    private static final int BARRAGE_WINDOW_TICKS = 300; // 15s * 20 ticks
+
+    public record MarkedInfo(UUID archerId, long expiresAtTick, float damageMultiplier) {}
+    private record PendingTurn(UUID targetId, long turnAtTick) {}
 
     private static final Map<UUID, Long> DASH_BOOST_UNTIL_TICK = new HashMap<>();
+    private static final Map<UUID, Long> MARK_IFRAME_UNTIL_TICK = new HashMap<>();
+    private static final Map<UUID, PendingTurn> MARK_TURN_TARGETS = new HashMap<>();
+    private static final Map<UUID, MarkedInfo> MARKED_TARGETS = new HashMap<>();
+    private static final Map<UUID, Integer> BARRAGE_BONUS_ARROWS = new HashMap<>();
 
     private ArcherSkills() {
     }
 
     public static void register(Consumer<Skill> registrar) {
         registrar.accept(new Skill(DASH, RpgClass.ARCHER, 1, 70, ArcherSkills::castDash));
-        // 2 min active duration (2400 ticks), flat 1 min cooldown (1200 ticks) — changes coming later
-        registrar.accept(new Skill(NIGHTVISION, RpgClass.ARCHER, 1, ONE_MINUTE_TICKS, ArcherSkills::castNightVision));
+        registrar.accept(new Skill(MARK, RpgClass.ARCHER, 1, 360, ArcherSkills::castMark));
         // 2 min active window (2400 ticks) with multi-leap re-trigger + tiered Slow Falling (up to IV), flat 1 min cooldown after window ends
         registrar.accept(new Skill(LEAP, RpgClass.ARCHER, 1, ONE_MINUTE_TICKS, ArcherSkills::castLeap));
+        registrar.accept(new Skill(ARROW_BARRAGE, RpgClass.ARCHER, 1, 400, ArcherSkills::castArrowBarrage));
     }
 
     public static boolean hasDashBoost(UUID playerId, long gameTime) {
@@ -56,9 +74,89 @@ public final class ArcherSkills {
         SkillRegistry.setUntil(DASH_BOOST_UNTIL_TICK, playerId, gameTime, ticksLeft);
     }
 
+    public static boolean hasMarkIFrame(UUID playerId, long gameTime) {
+        return SkillRegistry.remainingTicks(MARK_IFRAME_UNTIL_TICK, playerId, gameTime) > 0;
+    }
+
+    public static float getMarkedDamageMultiplier(UUID targetId, UUID attackerId, long gameTime) {
+        MarkedInfo info = MARKED_TARGETS.get(targetId);
+        if (info == null || gameTime >= info.expiresAtTick()) {
+            MARKED_TARGETS.remove(targetId);
+            return 1.0f;
+        }
+        return info.archerId().equals(attackerId) ? info.damageMultiplier() : 1.0f;
+    }
+
+    public static int consumeArrowBarrageBonusArrows(PlayerRpgData data, UUID playerId, long gameTime) {
+        if (!data.isSkillActive(ARROW_BARRAGE, gameTime)) {
+            BARRAGE_BONUS_ARROWS.remove(playerId);
+            return 0;
+        }
+        data.clearActiveWindow(ARROW_BARRAGE);
+        Integer bonus = BARRAGE_BONUS_ARROWS.remove(playerId);
+        return bonus != null ? bonus : 3;
+    }
+
     public static void tick(ServerPlayer player, PlayerRpgData data, long gameTime) {
         if (!hasDashBoost(player.getUUID(), gameTime)) {
             DASH_BOOST_UNTIL_TICK.remove(player.getUUID());
+        }
+        if (hasMarkIFrame(player.getUUID(), gameTime)) {
+            player.setPose(Pose.CROUCHING);
+            if (player.level() instanceof ServerLevel level) {
+                level.sendParticles(ParticleTypes.CLOUD, player.getX(), player.getY() + 0.15, player.getZ(), 2, 0.15, 0.05, 0.15, 0.01);
+            }
+        } else {
+            MARK_IFRAME_UNTIL_TICK.remove(player.getUUID());
+        }
+
+        // Auto-turn toward the marked enemy's back right after sliding past them
+        PendingTurn pendingTurn = MARK_TURN_TARGETS.get(player.getUUID());
+        if (pendingTurn != null && gameTime >= pendingTurn.turnAtTick()) {
+            MARK_TURN_TARGETS.remove(player.getUUID());
+            if (player.level() instanceof ServerLevel level) {
+                Entity target = level.getEntity(pendingTurn.targetId());
+                if (target != null && target.isAlive()) {
+                    Vec3 diff = target.getEyePosition().subtract(player.getEyePosition());
+                    double horiz = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+                    float yaw = (float) (Math.toDegrees(Math.atan2(diff.z, diff.x)) - 90.0);
+                    float pitch = (float) -Math.toDegrees(Math.atan2(diff.y, horiz));
+                    player.teleportTo(level, player.getX(), player.getY(), player.getZ(), yaw, pitch);
+                }
+            }
+        }
+
+        // Gentle arrow homing toward marked enemies
+        if (!MARKED_TARGETS.isEmpty() && player.level() instanceof ServerLevel level) {
+            for (AbstractArrow arrow : level.getEntitiesOfClass(AbstractArrow.class, player.getBoundingBox().inflate(48.0),
+                    a -> a.isAlive() && !a.onGround() && player.equals(a.getOwner()))) {
+                LivingEntity nearestMarked = null;
+                double bestDistSq = 12.25; // 3.5 blocks
+                for (LivingEntity candidate : level.getEntitiesOfClass(LivingEntity.class, arrow.getBoundingBox().inflate(5.5),
+                        e -> e.isAlive() && MARKED_TARGETS.containsKey(e.getUUID()))) {
+                    MarkedInfo info = MARKED_TARGETS.get(candidate.getUUID());
+                    if (info != null && gameTime < info.expiresAtTick() && info.archerId().equals(player.getUUID())) {
+                        double dSq = arrow.distanceToSqr(candidate);
+                        if (dSq < bestDistSq) {
+                            bestDistSq = dSq;
+                            nearestMarked = candidate;
+                        }
+                    }
+                }
+                if (nearestMarked != null) {
+                    Vec3 vel = arrow.getDeltaMovement();
+                    double speed = vel.length();
+                    if (speed > 0.2) {
+                        Vec3 toTarget = nearestMarked.getEyePosition().subtract(arrow.position()).normalize().scale(speed);
+                        Vec3 steered = vel.lerp(toTarget, 0.22).normalize().scale(speed);
+                        arrow.setDeltaMovement(steered);
+                    }
+                }
+            }
+        }
+
+        if (!data.isSkillActive(ARROW_BARRAGE, gameTime)) {
+            BARRAGE_BONUS_ARROWS.remove(player.getUUID());
         }
 
         // When Leap's 2-minute active window expires, start its flat 1-minute cooldown (no level/tier reduction)
@@ -72,18 +170,72 @@ public final class ArcherSkills {
         }
     }
 
-    private static boolean castNightVision(ServerPlayer player, PlayerRpgData data, int skillLevel, SkillTier tier) {
+    private static boolean castMark(ServerPlayer player, PlayerRpgData data, int skillLevel, SkillTier tier) {
         if (!(player.level() instanceof ServerLevel level)) return false;
         long gameTime = level.getGameTime();
 
-        int duration = (int) Math.round((TWO_MINUTES_TICKS + (skillLevel - 1) * 40) * Math.sqrt(tier.getPowerMultiplier()));
-        player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, duration, 0, false, false));
-        data.startActiveWindow(NIGHTVISION, gameTime, duration);
+        double range = 20.0;
+        Vec3 eyePos = player.getEyePosition(1.0f);
+        Vec3 lookVec = player.getLookAngle();
+        Vec3 endPos = eyePos.add(lookVec.scale(range));
+        AABB searchBox = player.getBoundingBox().expandTowards(lookVec.scale(range)).inflate(1.5);
 
-        level.playSound(null, player.blockPosition(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 1.0f, 1.25f);
-        level.sendParticles(ParticleTypes.END_ROD, player.getX(), player.getY() + 1.2, player.getZ(), 10, 0.35, 0.35, 0.35, 0.02);
+        EntityHitResult hit = ProjectileUtil.getEntityHitResult(
+                player,
+                eyePos,
+                endPos,
+                searchBox,
+                e -> e instanceof LivingEntity le && le.isAlive() && e != player && !e.isAlliedTo(player),
+                range * range
+        );
+
+        if (hit == null || !(hit.getEntity() instanceof LivingEntity target)) {
+            player.displayClientMessage(Component.literal("No enemy in sight to Mark!"), true);
+            return false;
+        }
+
+        // Slide through the target and continue a little forward (no teleport)
+        Vec3 toTarget = target.position().subtract(player.position());
+        Vec3 horizDir = new Vec3(toTarget.x, 0.0, toTarget.z);
+        if (horizDir.lengthSqr() < 1.0E-4) {
+            horizDir = new Vec3(lookVec.x, 0.0, lookVec.z);
+        }
+        Vec3 slideVel = horizDir.normalize().scale(2.25);
+        player.setDeltaMovement(slideVel.x, 0.18, slideVel.z);
+        player.hurtMarked = true;
+        player.fallDistance = 0.0f;
+
+        // Grant i-frames while sliding and schedule auto-turn toward target's back
+        SkillRegistry.setUntil(MARK_IFRAME_UNTIL_TICK, player.getUUID(), gameTime, MARK_IFRAME_TICKS);
+        MARK_TURN_TARGETS.put(player.getUUID(), new PendingTurn(target.getUUID(), gameTime + 7));
+
+        // Mark target for 30s (+25% base damage from this archer, scaling slightly with level/tier)
+        float mult = Math.min(1.50f, 1.25f + (skillLevel - 1) * 0.03f + tier.tierIndex() * 0.03f);
+        MARKED_TARGETS.put(target.getUUID(), new MarkedInfo(player.getUUID(), gameTime + MARK_DURATION_TICKS, mult));
+        target.addEffect(new MobEffectInstance(MobEffects.GLOWING, MARK_DURATION_TICKS, 0, false, true));
+
+        level.playSound(null, player.blockPosition(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.8f, 1.4f);
+        level.sendParticles(ParticleTypes.CRIT, target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(), 16, 0.4, 0.4, 0.4, 0.1);
         player.displayClientMessage(
-                Component.literal("Night Vision active for " + (duration / 20) + "s! (" + tier.getDisplayName() + " Lv." + skillLevel + ")"),
+                Component.literal("Marked " + target.getName().getString() + " for 30s! (+" + Math.round((mult - 1.0f) * 100) + "% dmg)"),
+                true
+        );
+        return true;
+    }
+
+    private static boolean castArrowBarrage(ServerPlayer player, PlayerRpgData data, int skillLevel, SkillTier tier) {
+        if (!(player.level() instanceof ServerLevel level)) return false;
+        long gameTime = level.getGameTime();
+
+        // 4 arrows total at base (1 main + 3 bonus), 5 arrows total at Epic+ or Lv.3+ (1 main + 4 bonus)
+        int bonusArrows = (tier.tierIndex() >= 2 || skillLevel >= 3) ? 4 : 3;
+        BARRAGE_BONUS_ARROWS.put(player.getUUID(), bonusArrows);
+        data.startActiveWindow(ARROW_BARRAGE, gameTime, BARRAGE_WINDOW_TICKS);
+
+        level.playSound(null, player.blockPosition(), SoundEvents.ARROW_SHOOT, SoundSource.PLAYERS, 1.0f, 1.35f);
+        level.sendParticles(ParticleTypes.ENCHANTED_HIT, player.getX(), player.getY() + 1.2, player.getZ(), 12, 0.35, 0.35, 0.35, 0.05);
+        player.displayClientMessage(
+                Component.literal("Arrow Barrage ready! Next bow shot fires " + (bonusArrows + 1) + " arrows."),
                 true
         );
         return true;

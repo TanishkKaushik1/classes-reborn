@@ -1,6 +1,7 @@
 package com.tanishk.classesreborn.client.gui;
 
 import com.tanishk.classesreborn.network.CastSkillPayload;
+import com.tanishk.classesreborn.network.EquipSkillSlotPayload;
 import com.tanishk.classesreborn.network.UnlockSkillPayload;
 import com.tanishk.classesreborn.rpg.PlayerRpgData;
 import com.tanishk.classesreborn.rpg.RpgClass;
@@ -113,6 +114,10 @@ public class SkillTreeScreen extends Screen {
         for (Skill s : SkillRegistry.getForClass(rpgClass)) {
             h = h * 31 + (data.isSkillUnlocked(s.getId()) ? 1 : 0);
             h = h * 31 + data.getSkillLevel(s.getId());
+        }
+        for (int slot = 0; slot < 3; slot++) {
+            String eq = SkillRegistry.getActiveSlotSkillId(data, slot);
+            h = h * 31 + (eq == null ? 0 : eq.hashCode());
         }
         return h;
     }
@@ -390,6 +395,20 @@ public class SkillTreeScreen extends Screen {
         private int plusX() { return pillX() - PLUS_SIZE - 4; }
         private int plusY() { return getY() + (height - PLUS_SIZE) / 2; }
 
+        private int slotBtnX(int slot) { return plusX() - (3 - slot) * 16 - 4; }
+        private int slotBtnY() { return getY() + (height - 14) / 2; }
+
+        private int hitSlotBtn(double mx, double my) {
+            if (!unlocked) return -1;
+            int sy = slotBtnY();
+            if (my < sy || my >= sy + 14) return -1;
+            for (int slot = 0; slot < 3; slot++) {
+                int sx = slotBtnX(slot);
+                if (mx >= sx && mx < sx + 14) return slot;
+            }
+            return -1;
+        }
+
         private boolean overPlus(double mx, double my) {
             return unlocked && mx >= plusX() && mx < plusX() + PLUS_SIZE
                     && my >= plusY() && my < plusY() + PLUS_SIZE;
@@ -407,12 +426,20 @@ public class SkillTreeScreen extends Screen {
 
         @Override
         public boolean mouseClicked(double mx, double my, int button) {
-            if (button == 0 && inViewport(my) && overPlus(mx, my)) {
-                if (canUpgrade) {
+            if (button == 0 && inViewport(my)) {
+                int slot = hitSlotBtn(mx, my);
+                if (slot >= 0) {
                     this.playDownSound(Minecraft.getInstance().getSoundManager());
-                    PacketDistributor.sendToServer(new UnlockSkillPayload(skill.getId()));
+                    PacketDistributor.sendToServer(new EquipSkillSlotPayload(slot, skill.getId()));
+                    return true;
                 }
-                return true;
+                if (overPlus(mx, my)) {
+                    if (canUpgrade) {
+                        this.playDownSound(Minecraft.getInstance().getSoundManager());
+                        PacketDistributor.sendToServer(new UnlockSkillPayload(skill.getId()));
+                    }
+                    return true;
+                }
             }
             return super.mouseClicked(mx, my, button);
         }
@@ -462,6 +489,24 @@ public class SkillTreeScreen extends Screen {
                 gg.drawString(font, "Ready to unlock (1 SP)", x + 12, y + 18, COL_AVAILABLE, false);
             } else {
                 gg.drawString(font, "Requires Lv. " + skill.getRequiredLevel(), x + 12, y + 18, COL_LOCKED, false);
+            }
+
+            // Active slot buttons (G, R, C) for unlocked skills
+            if (unlocked) {
+                Minecraft mc = Minecraft.getInstance();
+                PlayerRpgData data = mc.player != null ? PlayerRpgData.get(mc.player) : null;
+                String[] slotLabels = {"G", "R", "C"};
+                int sy = slotBtnY();
+                for (int slot = 0; slot < 3; slot++) {
+                    int sx = slotBtnX(slot);
+                    boolean equipped = data != null && skill.getId().equals(SkillRegistry.getActiveSlotSkillId(data, slot));
+                    boolean slotHover = inViewport(mouseY) && mouseX >= sx && mouseX < sx + 14 && mouseY >= sy && mouseY < sy + 14;
+                    int sbg = equipped ? 0xFF2E6B2E : (slotHover ? 0xFF444455 : 0xFF252530);
+                    int sOutline = equipped ? COL_ACCENT : (slotHover ? 0xAAFFFFFF : 0x55FFFFFF);
+                    gg.fill(sx, sy, sx + 14, sy + 14, sbg);
+                    gg.renderOutline(sx, sy, 14, 14, sOutline);
+                    gg.drawCenteredString(font, slotLabels[slot], sx + 7, sy + 3, equipped ? COL_ACCENT : 0xFFE0E0E0);
+                }
             }
 
             // Upgrade "+" / MAX (unlocked only)

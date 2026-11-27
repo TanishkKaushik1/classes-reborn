@@ -19,8 +19,9 @@ public final class SkillRegistry {
     public static final String TANK_ROAR = TankSkills.ROAR;
     public static final String SWORDSMAN_QUICKSLASH = SwordsmanSkills.QUICKSLASH;
     public static final String ARCHER_DASH = ArcherSkills.DASH;
-    public static final String ARCHER_NIGHTVISION = ArcherSkills.NIGHTVISION;
+    public static final String ARCHER_MARK = ArcherSkills.MARK;
     public static final String ARCHER_LEAP = ArcherSkills.LEAP;
+    public static final String ARCHER_ARROW_BARRAGE = ArcherSkills.ARROW_BARRAGE;
     public static final String ASSASSIN_INVISIBILITY = AssassinSkills.INVISIBILITY;
     public static final String HEALER_HEAL = HealerSkills.HEAL;
 
